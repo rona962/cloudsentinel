@@ -1,0 +1,686 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  CloudSentinel SIEM - Sprint 1: Attack Simulator + Detection Engine
+  Serverless security monitoring with simulated threats and automated response.
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 30
+    MemorySize: 128
+    Environment:
+      Variables:
+        ALERTS_TABLE: !Ref AlertsTable
+        EVENTS_TABLE: !Ref SecurityEventsTable
+        INCIDENTS_BUCKET: !Ref IncidentsBucket
+        ALERT_TOPIC: !Ref AlertTopic
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, prod]
+  AlertEmail:
+    Type: String
+    Description: Email to receive security alerts
+    Default: ""
+
+Conditions:
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]
+
+Resources:
+
+  # ============================================
+  # STORAGE
+  # ============================================
+
+  SecurityEventsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub cloudsentinel-events-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+        - AttributeName: gsi1pk
+          AttributeType: S
+        - AttributeName: gsi1sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: gsi1pk
+              KeyType: HASH
+            - AttributeName: gsi1sk
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      StreamSpecification:
+        StreamViewType: NEW_IMAGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  AlertsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub cloudsentinel-alerts-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: alert_id
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+        - AttributeName: severity
+          AttributeType: S
+      KeySchema:
+        - AttributeName: alert_id
+          KeyType: HASH
+        - AttributeName: created_at
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: BySeverity
+          KeySchema:
+            - AttributeName: severity
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  IncidentsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub cloudsentinel-incidents-${AWS::AccountId}-${Environment}
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldReports
+            Status: Enabled
+            ExpirationInDays: 90
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # ============================================
+  # SNS - ALERTING
+  # ============================================
+
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub cloudsentinel-alerts-${Environment}
+
+  # ============================================
+  # COGNITO - AUTHENTICATION
+  # ============================================
+
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub cloudsentinel-users-${Environment}
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          RequireUppercase: true
+      Schema:
+        - AttributeDataType: String
+          Name: email
+          Required: true
+          Mutable: true
+        - AttributeDataType: String
+          Name: name
+          Required: false
+          Mutable: true
+
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub cloudsentinel-dashboard-${Environment}
+      UserPoolId: !Ref CognitoUserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+      PreventUserExistenceErrors: ENABLED
+      AccessTokenValidity: 1
+      IdTokenValidity: 1
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+
+  # ============================================
+  # CLOUDTRAIL - REAL EVENT MONITORING
+  # ============================================
+
+  CloudTrailBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub cloudsentinel-trail-${AWS::AccountId}-${Environment}
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldLogs
+            Status: Enabled
+            ExpirationInDays: 30
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  CloudTrailBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CloudTrailBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AWSCloudTrailAclCheck
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: s3:GetBucketAcl
+            Resource: !GetAtt CloudTrailBucket.Arn
+          - Sid: AWSCloudTrailWrite
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub ${CloudTrailBucket.Arn}/AWSLogs/${AWS::AccountId}/*
+            Condition:
+              StringEquals:
+                s3:x-amz-acl: bucket-owner-full-control
+
+  SentinelTrail:
+    Type: AWS::CloudTrail::Trail
+    DependsOn: CloudTrailBucketPolicy
+    Properties:
+      TrailName: !Sub cloudsentinel-trail-${Environment}
+      IsLogging: true
+      S3BucketName: !Ref CloudTrailBucket
+      EnableLogFileValidation: true
+      IsMultiRegionTrail: false
+      IncludeGlobalServiceEvents: true
+      EventSelectors:
+        - ReadWriteType: WriteOnly
+          IncludeManagementEvents: true
+
+  # Lambda to process CloudTrail logs from S3
+  CloudTrailProcessor:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub cloudsentinel-trail-processor-${Environment}
+      Handler: cloudtrail/trail_processor.handler
+      CodeUri: src/
+      Timeout: 120
+      MemorySize: 256
+      Environment:
+        Variables:
+          TRAIL_BUCKET: !Ref CloudTrailBucket
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SecurityEventsTable
+        - S3ReadPolicy:
+            BucketName: !Ref CloudTrailBucket
+
+  # Use CloudTrail direct EventBridge integration
+  # Detects real API calls in real-time without needing S3 triggers
+  CloudTrailEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub cloudsentinel-trail-trigger-${Environment}
+      Description: Captures real AWS API calls via CloudTrail EventBridge integration
+      EventPattern:
+        detail-type:
+          - "AWS API Call via CloudTrail"
+        detail:
+          eventSource:
+            - iam.amazonaws.com
+            - sts.amazonaws.com
+            - s3.amazonaws.com
+            - ec2.amazonaws.com
+            - signin.amazonaws.com
+      Targets:
+        - Id: TrailProcessor
+          Arn: !GetAtt CloudTrailProcessor.Arn
+
+  CloudTrailEventPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CloudTrailProcessor
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt CloudTrailEventRule.Arn
+
+  AlertEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      Protocol: email
+      TopicArn: !Ref AlertTopic
+      Endpoint: !Ref AlertEmail
+
+  # ============================================
+  # RED TEAM - ATTACK SIMULATORS
+  # ============================================
+
+  # Simulates brute force login attempts
+  BruteForceSimulator:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub cloudsentinel-sim-bruteforce-${Environment}
+      Handler: simulators/brute_force.handler
+      CodeUri: src/
+      Description: Simulates brute force SSH/console login attempts
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SecurityEventsTable
+
+  # Simulates privilege escalation attempts
+  PrivEscSimulator:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub cloudsentinel-sim-privesc-${Environment}
+      Handler: simulators/privilege_escalation.handler
+      CodeUri: src/
+      Description: Simulates IAM privilege escalation patterns
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SecurityEventsTable
+
+  # Simulates data exfiltration patterns
+  ExfilSimulator:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub cloudsentinel-sim-exfil-${Environment}
+      Handler: simulators/data_exfiltration.handler
+      CodeUri: src/
+      Description: Simulates S3 data exfiltration patterns
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SecurityEventsTable
+
+  # Simulates lateral movement
+  LateralMovementSimulator:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub cloudsentinel-sim-lateral-${Environment}
+      Handler: simulators/lateral_movement.handler
+      CodeUri: src/
+      Description: Simulates cross-account lateral movement
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SecurityEventsTable
+
+  # Orchestrator - runs random attack patterns
+  AttackOrchestrator:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub cloudsentinel-orchestrator-${Environment}
+      Handler: orchestrator/attack_orchestrator.handler
+      CodeUri: src/
+      Timeout: 60
+      Environment:
+        Variables:
+          BRUTE_FORCE_FN: !Ref BruteForceSimulator
+          PRIV_ESC_FN: !Ref PrivEscSimulator
+          EXFIL_FN: !Ref ExfilSimulator
+          LATERAL_FN: !Ref LateralMovementSimulator
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SecurityEventsTable
+        - LambdaInvokePolicy:
+            FunctionName: !Ref BruteForceSimulator
+        - LambdaInvokePolicy:
+            FunctionName: !Ref PrivEscSimulator
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ExfilSimulator
+        - LambdaInvokePolicy:
+            FunctionName: !Ref LateralMovementSimulator
+
+  # Schedule - runs attack patterns every 15 minutes
+  AttackSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub cloudsentinel-attack-schedule-${Environment}
+      Description: Triggers attack simulations periodically
+      ScheduleExpression: rate(15 minutes)
+      State: DISABLED  # Enable manually when ready to test
+      Targets:
+        - Id: AttackOrchestrator
+          Arn: !GetAtt AttackOrchestrator.Arn
+
+  AttackSchedulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AttackOrchestrator
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt AttackSchedule.Arn
+
+  # ============================================
+  # BLUE TEAM - DETECTION ENGINE
+  # ============================================
+
+  # Correlation engine - analyzes events and generates alerts
+  CorrelationEngine:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub cloudsentinel-correlator-${Environment}
+      Handler: detection/correlation_engine.handler
+      CodeUri: src/
+      Timeout: 60
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SecurityEventsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AlertsTable
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt AlertTopic.TopicName
+        - Statement:
+            - Effect: Allow
+              Action: events:PutEvents
+              Resource: "*"
+            - Effect: Allow
+              Action:
+                - dynamodb:GetRecords
+                - dynamodb:GetShardIterator
+                - dynamodb:DescribeStream
+                - dynamodb:ListStreams
+              Resource: !GetAtt SecurityEventsTable.StreamArn
+
+  # Triggered by new events in DynamoDB Stream
+  SecurityEventsStream:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt SecurityEventsTable.StreamArn
+      FunctionName: !Ref CorrelationEngine
+      StartingPosition: LATEST
+      BatchSize: 10
+      MaximumBatchingWindowInSeconds: 5
+
+  # ============================================
+  # BLUE TEAM - STEP FUNCTIONS IR WORKFLOW
+  # ============================================
+
+  # Step 1: Classify and enrich the alert
+  IRClassifyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub cloudsentinel-ir-classify-${Environment}
+      Handler: response/step_classify.handler
+      CodeUri: src/
+      Timeout: 30
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AlertsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref SecurityEventsTable
+
+  # Step 2: Contain the threat
+  IRContainFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub cloudsentinel-ir-contain-${Environment}
+      Handler: response/step_contain.handler
+      CodeUri: src/
+      Timeout: 30
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AlertsTable
+
+  # Step 3: Investigate and gather evidence
+  IRInvestigateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub cloudsentinel-ir-investigate-${Environment}
+      Handler: response/step_investigate.handler
+      CodeUri: src/
+      Timeout: 60
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref SecurityEventsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref AlertsTable
+
+  # Step 4: Remediate
+  IRRemediateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub cloudsentinel-ir-remediate-${Environment}
+      Handler: response/step_remediate.handler
+      CodeUri: src/
+      Timeout: 30
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AlertsTable
+
+  # Step 5: Generate report and notify
+  IRReportFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub cloudsentinel-ir-report-${Environment}
+      Handler: response/step_report.handler
+      CodeUri: src/
+      Timeout: 60
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AlertsTable
+        - S3CrudPolicy:
+            BucketName: !Ref IncidentsBucket
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt AlertTopic.TopicName
+
+  # Step Functions State Machine
+  IncidentResponseStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub cloudsentinel-incident-response-${Environment}
+      DefinitionUri: statemachine/ir_workflow.asl.json
+      DefinitionSubstitutions:
+        IRClassifyArn: !GetAtt IRClassifyFunction.Arn
+        IRContainArn: !GetAtt IRContainFunction.Arn
+        IRInvestigateArn: !GetAtt IRInvestigateFunction.Arn
+        IRRemediateArn: !GetAtt IRRemediateFunction.Arn
+        IRReportArn: !GetAtt IRReportFunction.Arn
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref IRClassifyFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref IRContainFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref IRInvestigateFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref IRRemediateFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref IRReportFunction
+
+  # EventBridge rule triggers Step Functions instead of single Lambda
+  CriticalAlertRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub cloudsentinel-critical-alert-${Environment}
+      Description: Triggers IR workflow for critical/high alerts
+      EventPattern:
+        source:
+          - cloudsentinel.detection
+        detail-type:
+          - SecurityAlert
+        detail:
+          severity:
+            - CRITICAL
+            - HIGH
+      Targets:
+        - Id: IRStateMachine
+          Arn: !Ref IncidentResponseStateMachine
+          RoleArn: !GetAtt EventBridgeSFNRole.Arn
+
+  EventBridgeSFNRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: StartStepFunction
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: states:StartExecution
+                Resource: !Ref IncidentResponseStateMachine
+
+  # ============================================
+  # API - Dashboard Data
+  # ============================================
+
+  DashboardApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub cloudsentinel-api-${Environment}
+      StageName: !Ref Environment
+      Cors:
+        AllowMethods: "'GET,POST,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowOrigin: "'*'"
+      Auth:
+        DefaultAuthorizer: CognitoAuth
+        AddDefaultAuthorizerToCorsPreflight: false
+        Authorizers:
+          CognitoAuth:
+            UserPoolArn: !GetAtt CognitoUserPool.Arn
+
+  GetAlertsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub cloudsentinel-api-alerts-${Environment}
+      Handler: api/get_alerts.handler
+      CodeUri: src/
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref AlertsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref SecurityEventsTable
+      Events:
+        GetAlerts:
+          Type: Api
+          Properties:
+            RestApiId: !Ref DashboardApi
+            Path: /alerts
+            Method: GET
+        GetStats:
+          Type: Api
+          Properties:
+            RestApiId: !Ref DashboardApi
+            Path: /stats
+            Method: GET
+
+  TriggerAttackFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub cloudsentinel-api-trigger-${Environment}
+      Handler: api/trigger_attack.handler
+      CodeUri: src/
+      Timeout: 90
+      Environment:
+        Variables:
+          ORCHESTRATOR_FN: !Ref AttackOrchestrator
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref AttackOrchestrator
+      Events:
+        TriggerAttack:
+          Type: Api
+          Properties:
+            RestApiId: !Ref DashboardApi
+            Path: /attack
+            Method: POST
+        GetScenarios:
+          Type: Api
+          Properties:
+            RestApiId: !Ref DashboardApi
+            Path: /scenarios
+            Method: GET
+
+# ============================================
+# OUTPUTS
+# ============================================
+
+Outputs:
+  SecurityEventsTable:
+    Description: DynamoDB table for security events
+    Value: !Ref SecurityEventsTable
+
+  AlertsTable:
+    Description: DynamoDB table for alerts
+    Value: !Ref AlertsTable
+
+  IncidentsBucket:
+    Description: S3 bucket for incident reports
+    Value: !Ref IncidentsBucket
+
+  AlertTopicArn:
+    Description: SNS topic for alerts
+    Value: !Ref AlertTopic
+
+  ApiUrl:
+    Description: API Gateway URL for dashboard
+    Value: !Sub https://${DashboardApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}
+
+  AttackScheduleRule:
+    Description: EventBridge rule (DISABLED by default - enable to start simulations)
+    Value: !Ref AttackSchedule
+
+  CloudTrailBucket:
+    Description: S3 bucket for CloudTrail logs
+    Value: !Ref CloudTrailBucket
+
+  CloudTrailName:
+    Description: CloudTrail trail name
+    Value: !Ref SentinelTrail
+
+  IRStateMachine:
+    Description: Step Functions Incident Response workflow
+    Value: !Ref IncidentResponseStateMachine
+
+  CognitoUserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref CognitoUserPool
+
+  CognitoClientId:
+    Description: Cognito App Client ID
+    Value: !Ref CognitoUserPoolClient

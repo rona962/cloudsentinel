@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CloudSentinel — SIEM Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg-primary:#0a0e17;--bg-secondary:#111827;--bg-card:#1a1f35;--bg-card-hover:#1f2642;--border:#2a3154;--border-glow:rgba(56,189,248,.2);--text-primary:#e2e8f0;--text-secondary:#94a3b8;--text-muted:#64748b;--accent-blue:#38bdf8;--accent-cyan:#22d3ee;--accent-green:#4ade80;--accent-red:#f87171;--accent-purple:#a78bfa;--critical:#ef4444;--high:#f97316;--medium:#eab308;--low:#22d3ee;--contained:#4ade80;--open:#f87171;--glow-blue:0 0 20px rgba(56,189,248,.15);--glow-red:0 0 20px rgba(248,113,113,.15);--font-mono:'JetBrains Mono',monospace;--font-display:'Space Grotesk',sans-serif}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-display);min-height:100vh;overflow-x:hidden}
+body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.03) 2px,rgba(0,0,0,.03) 4px);pointer-events:none;z-index:1000}
+body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse at 20% 50%,rgba(56,189,248,.04) 0%,transparent 50%),radial-gradient(ellipse at 80% 20%,rgba(168,85,247,.04) 0%,transparent 50%),radial-gradient(ellipse at 50% 80%,rgba(239,68,68,.03) 0%,transparent 50%);pointer-events:none;z-index:-1}
+
+/* ── LOGIN SCREEN ── */
+.login-screen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:500;background:var(--bg-primary)}
+.login-screen.hidden{display:none}
+.login-box{background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:40px;width:400px;max-width:90vw}
+.login-logo{text-align:center;margin-bottom:32px}
+.login-logo-icon{width:56px;height:56px;background:linear-gradient(135deg,var(--accent-blue),var(--accent-purple));border-radius:14px;display:inline-flex;align-items:center;justify-content:center;font-size:28px;box-shadow:var(--glow-blue);margin-bottom:12px}
+.login-logo-text{font-size:24px;font-weight:700;background:linear-gradient(135deg,var(--accent-blue),var(--accent-cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.login-logo-sub{font-family:var(--font-mono);font-size:11px;color:var(--text-muted);letter-spacing:2px;text-transform:uppercase;margin-top:4px}
+.login-tabs{display:flex;gap:4px;margin-bottom:24px;background:var(--bg-secondary);border-radius:8px;padding:4px}
+.login-tab{flex:1;padding:8px;text-align:center;border-radius:6px;cursor:pointer;font-size:13px;font-weight:500;color:var(--text-muted);transition:all .2s}
+.login-tab.active{background:var(--bg-card);color:var(--text-primary);box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.form-group{margin-bottom:16px}
+.form-label{display:block;font-size:12px;color:var(--text-secondary);margin-bottom:6px;font-family:var(--font-mono)}
+.form-input{width:100%;padding:10px 14px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-family:var(--font-display);font-size:14px;outline:none;transition:border-color .2s}
+.form-input:focus{border-color:var(--accent-blue)}
+.form-input::placeholder{color:var(--text-muted)}
+.login-btn{width:100%;padding:12px;background:linear-gradient(135deg,var(--accent-blue),var(--accent-cyan));border:none;border-radius:8px;color:#0a0e17;font-family:var(--font-display);font-size:14px;font-weight:600;cursor:pointer;transition:all .2s;margin-top:8px}
+.login-btn:hover{transform:translateY(-1px);box-shadow:var(--glow-blue)}
+.login-btn:disabled{opacity:.5;pointer-events:none}
+.login-error{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--accent-red);margin-bottom:16px;display:none}
+.login-error.visible{display:block}
+.login-success{background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.2);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--accent-green);margin-bottom:16px;display:none}
+.login-success.visible{display:block}
+.form-group.hidden{display:none}
+
+/* ── HEADER ── */
+.header{padding:16px 32px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);background:rgba(10,14,23,.8);backdrop-filter:blur(20px);position:sticky;top:0;z-index:100}
+.logo-area{display:flex;align-items:center;gap:14px}
+.logo-icon{width:38px;height:38px;background:linear-gradient(135deg,var(--accent-blue),var(--accent-purple));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:var(--glow-blue)}
+.logo-text{font-size:20px;font-weight:700;letter-spacing:-.5px;background:linear-gradient(135deg,var(--accent-blue),var(--accent-cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.logo-subtitle{font-family:var(--font-mono);font-size:10px;color:var(--text-muted);letter-spacing:2px;text-transform:uppercase}
+.header-right{display:flex;align-items:center;gap:16px}
+.status-indicator{display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:12px;color:var(--text-secondary)}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--accent-green);animation:pulse-dot 2s ease-in-out infinite}
+@keyframes pulse-dot{0%,100%{box-shadow:0 0 0 0 rgba(74,222,128,.4)}50%{box-shadow:0 0 0 6px rgba(74,222,128,0)}}
+.last-updated{font-family:var(--font-mono);font-size:11px;color:var(--text-muted)}
+.user-badge{font-family:var(--font-mono);font-size:11px;color:var(--accent-cyan);background:rgba(34,211,238,.1);padding:4px 10px;border-radius:6px}
+.btn{border:1px solid var(--border);padding:8px 16px;border-radius:8px;cursor:pointer;font-family:var(--font-mono);font-size:12px;transition:all .2s}
+.btn-default{background:var(--bg-card);color:var(--text-secondary)}.btn-default:hover{border-color:var(--accent-blue);color:var(--accent-blue);box-shadow:var(--glow-blue)}
+.btn-danger{background:rgba(239,68,68,.1);border-color:rgba(239,68,68,.3);color:var(--accent-red)}.btn-danger:hover{background:rgba(239,68,68,.2);box-shadow:var(--glow-red)}
+.btn-logout{background:var(--bg-card);color:var(--text-muted);border-color:var(--border);padding:6px 12px}.btn-logout:hover{border-color:var(--accent-red);color:var(--accent-red)}
+.btn.loading{pointer-events:none;opacity:.6}
+
+/* ── MAIN ── */
+.app-content{display:none}
+.app-content.visible{display:block}
+.main{padding:24px 32px;max-width:1440px;margin:0 auto}
+.severity-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+.severity-card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:20px 24px;position:relative;overflow:hidden;transition:all .3s;cursor:pointer}
+.severity-card:hover{border-color:var(--border-glow);transform:translateY(-2px)}
+.severity-card.active{border-color:var(--accent-blue);box-shadow:var(--glow-blue)}
+.severity-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+.severity-card.critical::before{background:var(--critical)}.severity-card.high::before{background:var(--high)}.severity-card.medium::before{background:var(--medium)}.severity-card.low::before{background:var(--low)}
+.severity-label{font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:2px;margin-bottom:8px}
+.severity-card.critical .severity-label{color:var(--critical)}.severity-card.high .severity-label{color:var(--high)}.severity-card.medium .severity-label{color:var(--medium)}.severity-card.low .severity-label{color:var(--low)}
+.severity-count{font-size:42px;font-weight:700;line-height:1;margin-bottom:4px}
+.severity-card.critical .severity-count{color:var(--critical)}.severity-card.high .severity-count{color:var(--high)}.severity-card.medium .severity-count{color:var(--medium)}.severity-card.low .severity-count{color:var(--low)}
+.severity-sub{font-size:12px;color:var(--text-muted)}
+.stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px}
+.stat-card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:20px 24px;display:flex;align-items:center;gap:16px}
+.stat-icon{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px}
+.stat-icon.events{background:rgba(56,189,248,.1)}.stat-icon.alerts{background:rgba(248,113,113,.1)}.stat-icon.contained{background:rgba(74,222,128,.1)}
+.stat-value{font-size:28px;font-weight:700}.stat-label{font-size:13px;color:var(--text-secondary)}
+.attack-panel{background:var(--bg-card);border:1px solid rgba(239,68,68,.2);border-radius:12px;padding:20px 24px;margin-bottom:24px;display:none}
+.attack-panel.visible{display:block;animation:slideDown .3s ease}
+@keyframes slideDown{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
+.attack-panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.attack-panel-title{font-size:16px;font-weight:600}
+.attack-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.scenario-card{background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;padding:16px;cursor:pointer;transition:all .2s;position:relative;overflow:hidden}
+.scenario-card:hover{border-color:var(--accent-red);background:rgba(239,68,68,.05)}
+.scenario-card.running{pointer-events:none;opacity:.6}
+.scenario-name{font-size:13px;font-weight:600;margin-bottom:4px}.scenario-desc{font-size:11px;color:var(--text-secondary);margin-bottom:8px;line-height:1.4}
+.scenario-meta{display:flex;gap:8px;align-items:center}
+.scenario-severity{font-family:var(--font-mono);font-size:10px;padding:2px 6px;border-radius:4px;letter-spacing:1px}
+.scenario-severity.CRITICAL{background:rgba(239,68,68,.15);color:var(--critical)}.scenario-severity.HIGH{background:rgba(249,115,22,.15);color:var(--high)}.scenario-severity.MEDIUM{background:rgba(234,179,8,.15);color:var(--medium)}.scenario-severity.VARIES{background:rgba(167,139,250,.15);color:var(--accent-purple)}
+.scenario-attacks{font-family:var(--font-mono);font-size:10px;color:var(--text-muted)}
+.attack-result{margin-top:16px;padding:12px 16px;background:rgba(74,222,128,.05);border:1px solid rgba(74,222,128,.2);border-radius:8px;font-family:var(--font-mono);font-size:12px;color:var(--accent-green);display:none}
+.attack-result.visible{display:block;animation:slideDown .3s ease}.attack-result.error{background:rgba(239,68,68,.05);border-color:rgba(239,68,68,.2);color:var(--accent-red)}
+.content-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px}
+.panel{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.panel-header{padding:14px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.panel-title{font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
+.panel-badge{font-family:var(--font-mono);font-size:11px;background:rgba(56,189,248,.1);color:var(--accent-blue);padding:2px 8px;border-radius:4px}
+.filter-group{display:flex;gap:4px}
+.filter-btn{font-family:var(--font-mono);font-size:10px;padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;transition:all .2s;letter-spacing:.5px}
+.filter-btn:hover{border-color:var(--accent-blue);color:var(--accent-blue)}.filter-btn.active{background:rgba(56,189,248,.1);border-color:var(--accent-blue);color:var(--accent-blue)}
+.panel-body{padding:0;max-height:480px;overflow-y:auto}.panel-body::-webkit-scrollbar{width:4px}.panel-body::-webkit-scrollbar-track{background:transparent}.panel-body::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.alert-item{padding:16px 24px;border-bottom:1px solid rgba(42,49,84,.5);transition:background .2s;cursor:pointer}.alert-item:hover{background:var(--bg-card-hover)}.alert-item:last-child{border-bottom:none}
+.alert-top{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+.severity-badge{font-family:var(--font-mono);font-size:10px;font-weight:700;letter-spacing:1px;padding:3px 8px;border-radius:4px;text-transform:uppercase}
+.severity-badge.CRITICAL{background:rgba(239,68,68,.15);color:var(--critical);border:1px solid rgba(239,68,68,.3)}.severity-badge.HIGH{background:rgba(249,115,22,.15);color:var(--high);border:1px solid rgba(249,115,22,.3)}.severity-badge.MEDIUM{background:rgba(234,179,8,.15);color:var(--medium);border:1px solid rgba(234,179,8,.3)}.severity-badge.LOW{background:rgba(34,211,238,.15);color:var(--low);border:1px solid rgba(34,211,238,.3)}
+.status-badge{font-family:var(--font-mono);font-size:10px;padding:3px 8px;border-radius:4px;letter-spacing:1px}
+.status-badge.CONTAINED{background:rgba(74,222,128,.1);color:var(--contained)}.status-badge.OPEN{background:rgba(248,113,113,.1);color:var(--open);animation:blink 2s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.5}}
+.alert-rule{font-family:var(--font-mono);font-size:10px;color:var(--text-muted)}
+.alert-title{font-size:13px;font-weight:500;margin-bottom:6px}.alert-desc{font-size:12px;color:var(--text-secondary);line-height:1.5}
+.alert-footer{display:flex;align-items:center;justify-content:space-between;margin-top:10px}
+.alert-time{font-family:var(--font-mono);font-size:11px;color:var(--text-muted)}.alert-mitre{font-family:var(--font-mono);font-size:10px;color:var(--accent-purple);background:rgba(167,139,250,.1);padding:2px 8px;border-radius:4px}
+.detail-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);z-index:200;display:none;justify-content:flex-end}.detail-overlay.visible{display:flex}
+.detail-panel{width:520px;max-width:90vw;height:100vh;background:var(--bg-secondary);border-left:1px solid var(--border);overflow-y:auto;animation:slideRight .25s ease}
+@keyframes slideRight{from{transform:translateX(100%)}to{transform:translateX(0)}}
+.detail-header{padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--bg-secondary);z-index:1}
+.detail-close{background:none;border:1px solid var(--border);color:var(--text-secondary);width:32px;height:32px;border-radius:8px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:all .2s}.detail-close:hover{border-color:var(--accent-red);color:var(--accent-red)}
+.detail-body{padding:24px}.detail-section{margin-bottom:24px}
+.detail-section-title{font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:2px;color:var(--text-muted);margin-bottom:12px}
+.detail-field{margin-bottom:12px}.detail-field-label{font-size:11px;color:var(--text-muted);margin-bottom:4px}.detail-field-value{font-size:13px;color:var(--text-primary);line-height:1.5}.detail-field-value.mono{font-family:var(--font-mono);font-size:12px}
+.detail-action-box{background:rgba(56,189,248,.05);border:1px solid rgba(56,189,248,.15);border-radius:8px;padding:12px 16px;font-size:12px;color:var(--text-secondary);line-height:1.6}
+.detail-action-item{padding:4px 0;display:flex;align-items:flex-start;gap:8px}.detail-action-item::before{content:'→';color:var(--accent-blue);font-family:var(--font-mono);flex-shrink:0}
+.feed-item{padding:14px 24px;border-bottom:1px solid rgba(42,49,84,.5);display:flex;gap:12px;align-items:flex-start}.feed-item:last-child{border-bottom:none}
+.feed-dot{width:10px;height:10px;border-radius:50%;margin-top:4px;flex-shrink:0}
+.feed-dot.CRITICAL{background:var(--critical);box-shadow:0 0 8px rgba(239,68,68,.4)}.feed-dot.HIGH{background:var(--high)}.feed-dot.MEDIUM{background:var(--medium)}.feed-dot.LOW{background:var(--low)}.feed-dot.CONTAINED{background:var(--contained)}
+.feed-content{flex:1}.feed-text{font-size:12px;color:var(--text-secondary);line-height:1.5}.feed-text strong{color:var(--text-primary);font-weight:500}
+.feed-time{font-family:var(--font-mono);font-size:10px;color:var(--text-muted);margin-top:4px}
+.mitre-grid{padding:20px 24px;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.mitre-item{background:rgba(167,139,250,.05);border:1px solid rgba(167,139,250,.15);border-radius:8px;padding:12px 16px;transition:all .2s}.mitre-item:hover{background:rgba(167,139,250,.1);border-color:rgba(167,139,250,.3)}
+.mitre-id{font-family:var(--font-mono);font-size:11px;color:var(--accent-purple);font-weight:600}.mitre-name{font-size:12px;color:var(--text-secondary);margin-top:2px}.mitre-count{font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin-top:4px}
+.full-panel{grid-column:1/-1}
+.empty-state{padding:48px 24px;text-align:center;color:var(--text-muted);font-size:13px}.empty-state .icon{font-size:32px;margin-bottom:12px}
+.toast{position:fixed;bottom:24px;right:24px;background:var(--bg-card);border:1px solid var(--accent-green);border-radius:8px;padding:12px 20px;font-size:13px;color:var(--text-primary);z-index:300;display:none;animation:slideUp .3s ease}.toast.error{border-color:var(--critical)}
+@keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+@media(max-width:1024px){.severity-grid{grid-template-columns:repeat(2,1fr)}.content-grid{grid-template-columns:1fr}.stats-row{grid-template-columns:1fr}.attack-grid{grid-template-columns:1fr}}
+@media(max-width:640px){.header{padding:12px 16px;flex-wrap:wrap;gap:12px}.main{padding:16px}.header-right{flex-wrap:wrap}}
+</style>
+</head>
+<body>
+
+<!-- LOGIN SCREEN -->
+<div class="login-screen" id="loginScreen">
+  <div class="login-box">
+    <div class="login-logo">
+      <div class="login-logo-icon">🛡️</div>
+      <div class="login-logo-text">CloudSentinel</div>
+      <div class="login-logo-sub">Security Operations Center</div>
+    </div>
+    <div class="login-tabs">
+      <div class="login-tab active" onclick="switchTab('login')">Sign In</div>
+      <div class="login-tab" onclick="switchTab('register')">Register</div>
+    </div>
+    <div class="login-error" id="loginError"></div>
+    <div class="login-success" id="loginSuccess"></div>
+    <div id="loginForm">
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input class="form-input" type="email" id="authEmail" placeholder="analyst@company.com" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input class="form-input" type="password" id="authPassword" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <div class="form-group hidden" id="nameGroup">
+        <label class="form-label">Name</label>
+        <input class="form-input" type="text" id="authName" placeholder="Security Analyst">
+      </div>
+      <div class="form-group hidden" id="confirmGroup">
+        <label class="form-label">Verification Code</label>
+        <input class="form-input" type="text" id="authCode" placeholder="123456">
+      </div>
+      <button class="login-btn" id="authBtn" onclick="handleAuth()">Sign In</button>
+    </div>
+  </div>
+</div>
+
+<!-- APP CONTENT -->
+<div class="app-content" id="appContent">
+<header class="header">
+  <div class="logo-area"><div class="logo-icon">🛡️</div><div><div class="logo-text">CloudSentinel</div><div class="logo-subtitle">SIEM Dashboard</div></div></div>
+  <div class="header-right">
+    <div class="status-indicator"><div class="status-dot"></div><span>System Active</span></div>
+    <div class="last-updated" id="lastUpdated">—</div>
+    <div class="user-badge" id="userBadge">—</div>
+    <button class="btn btn-danger" onclick="toggleAttackPanel()">⚡ Launch Attack</button>
+    <button class="btn btn-default" id="refreshBtn" onclick="loadData()">↻ Refresh</button>
+    <button class="btn btn-logout" onclick="logout()">Logout</button>
+  </div>
+</header>
+<main class="main">
+  <section class="attack-panel" id="attackPanel">
+    <div class="attack-panel-header"><div class="attack-panel-title">⚡ Attack Simulator</div><button class="btn btn-default" onclick="toggleAttackPanel()" style="padding:6px 12px">✕</button></div>
+    <div class="attack-grid" id="scenarioGrid"></div>
+    <div class="attack-result" id="attackResult"></div>
+  </section>
+  <section class="severity-grid">
+    <div class="severity-card critical" onclick="filterBySeverity('CRITICAL')"><div class="severity-label">Critical</div><div class="severity-count" id="countCritical">—</div><div class="severity-sub">Immediate action required</div></div>
+    <div class="severity-card high" onclick="filterBySeverity('HIGH')"><div class="severity-label">High</div><div class="severity-count" id="countHigh">—</div><div class="severity-sub">Urgent investigation</div></div>
+    <div class="severity-card medium" onclick="filterBySeverity('MEDIUM')"><div class="severity-label">Medium</div><div class="severity-count" id="countMedium">—</div><div class="severity-sub">Review recommended</div></div>
+    <div class="severity-card low" onclick="filterBySeverity('LOW')"><div class="severity-label">Low</div><div class="severity-count" id="countLow">—</div><div class="severity-sub">Informational</div></div>
+  </section>
+  <section class="stats-row">
+    <div class="stat-card"><div class="stat-icon events">📡</div><div><div class="stat-value" id="eventsToday">—</div><div class="stat-label">Events Today</div></div></div>
+    <div class="stat-card"><div class="stat-icon alerts">🚨</div><div><div class="stat-value" id="totalAlerts">—</div><div class="stat-label">Total Open Alerts</div></div></div>
+    <div class="stat-card"><div class="stat-icon contained">✅</div><div><div class="stat-value" id="containedCount">—</div><div class="stat-label">Auto-Contained</div></div></div>
+  </section>
+  <section class="content-grid">
+    <div class="panel"><div class="panel-header"><div class="panel-title">🔔 Alerts <span class="panel-badge" id="alertBadge">0</span></div><div class="filter-group"><button class="filter-btn active" onclick="setFilter('ALL',this)">All</button><button class="filter-btn" onclick="setFilter('OPEN',this)">Open</button><button class="filter-btn" onclick="setFilter('CONTAINED',this)">Contained</button></div></div><div class="panel-body" id="alertsList"><div class="empty-state"><div class="icon">⏳</div>Loading...</div></div></div>
+    <div class="panel"><div class="panel-header"><div class="panel-title">📋 Activity Timeline</div></div><div class="panel-body" id="activityFeed"><div class="empty-state"><div class="icon">⏳</div>Loading...</div></div></div>
+    <div class="panel full-panel"><div class="panel-header"><div class="panel-title">🎯 MITRE ATT&CK Coverage</div></div><div class="mitre-grid"><div class="mitre-item"><div class="mitre-id">T1110</div><div class="mitre-name">Brute Force</div><div class="mitre-count" id="mitre-brute">Detections: —</div></div><div class="mitre-item"><div class="mitre-id">T1078 / T1098</div><div class="mitre-name">Valid Accounts / Account Manipulation</div><div class="mitre-count" id="mitre-privesc">Detections: —</div></div><div class="mitre-item"><div class="mitre-id">T1537</div><div class="mitre-name">Transfer Data to Cloud Account</div><div class="mitre-count" id="mitre-exfil">Detections: —</div></div><div class="mitre-item"><div class="mitre-id">T1550 / T1552.005</div><div class="mitre-name">Alternate Auth / IMDS API</div><div class="mitre-count" id="mitre-lateral">Detections: —</div></div></div></div>
+  </section>
+</main>
+</div>
+
+<!-- DETAIL OVERLAY -->
+<div class="detail-overlay" id="detailOverlay" onclick="if(event.target===this)closeDetail()">
+  <div class="detail-panel"><div class="detail-header"><div style="font-weight:600">Alert Detail</div><button class="detail-close" onclick="closeDetail()">✕</button></div><div class="detail-body" id="detailBody"></div></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════
+// CONFIG — UPDATE AFTER DEPLOY
+// ═══════════════════════════════════════════
+const CONFIG = {
+  API_BASE: 'https://7q0jfdjf99.execute-api.us-east-1.amazonaws.com/dev',
+  COGNITO_USER_POOL_ID: 'us-east-1_lggzhZMHo',
+  COGNITO_CLIENT_ID: '1v1hdvikph9ishgb6n58brog46',
+  REGION: 'us-east-1',
+};
+
+// ═══════════════════════════════════════════
+// COGNITO AUTH (raw API - no SDK dependency)
+// ═══════════════════════════════════════════
+let currentUser = null;
+let idToken = null;
+let authMode = 'login';
+const COGNITO_URL = `https://cognito-idp.${CONFIG.REGION}.amazonaws.com/`;
+
+async function cognitoCall(action, payload) {
+  const res = await fetch(COGNITO_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-amz-json-1.1', 'X-Amz-Target': `AWSCognitoIdentityProviderService.${action}` },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) throw { code: data.__type?.split('#').pop() || 'Unknown', message: data.message || data.Message || 'Request failed' };
+  return data;
+}
+
+function switchTab(tab) {
+  authMode = tab;
+  document.querySelectorAll('.login-tab').forEach((t, i) => t.classList.toggle('active', (i === 0 && tab === 'login') || (i === 1 && (tab === 'register' || tab === 'confirm'))));
+  document.getElementById('nameGroup').classList.toggle('hidden', tab === 'login');
+  document.getElementById('confirmGroup').classList.toggle('hidden', tab !== 'confirm');
+  document.getElementById('authBtn').textContent = tab === 'login' ? 'Sign In' : tab === 'register' ? 'Create Account' : 'Verify Email';
+  hideErrors();
+}
+
+function hideErrors() {
+  document.getElementById('loginError').classList.remove('visible');
+  document.getElementById('loginSuccess').classList.remove('visible');
+}
+function showError(msg) { const el = document.getElementById('loginError'); el.textContent = msg; el.classList.add('visible'); document.getElementById('loginSuccess').classList.remove('visible'); }
+function showSuccess(msg) { const el = document.getElementById('loginSuccess'); el.textContent = msg; el.classList.add('visible'); document.getElementById('loginError').classList.remove('visible'); }
+
+function handleAuth() {
+  if (authMode === 'login') doLogin();
+  else if (authMode === 'register') doRegister();
+  else if (authMode === 'confirm') doConfirm();
+}
+
+async function doLogin() {
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  if (!email || !password) { showError('Please enter email and password.'); return; }
+  const btn = document.getElementById('authBtn');
+  btn.disabled = true; btn.textContent = 'Signing in...';
+  try {
+    const result = await cognitoCall('InitiateAuth', {
+      AuthFlow: 'USER_PASSWORD_AUTH',
+      ClientId: CONFIG.COGNITO_CLIENT_ID,
+      AuthParameters: { USERNAME: email, PASSWORD: password },
+    });
+    if (result.ChallengeName === 'NEW_PASSWORD_REQUIRED') {
+      // Handle forced password change
+      const newPass = prompt('Your temporary password must be changed. Enter a new password (8+ chars, uppercase, lowercase, number):');
+      if (!newPass) { btn.disabled = false; btn.textContent = 'Sign In'; return; }
+      const challenge = await cognitoCall('RespondToAuthChallenge', {
+        ChallengeName: 'NEW_PASSWORD_REQUIRED',
+        ClientId: CONFIG.COGNITO_CLIENT_ID,
+        Session: result.Session,
+        ChallengeResponses: { USERNAME: email, NEW_PASSWORD: newPass },
+      });
+      idToken = challenge.AuthenticationResult.IdToken;
+      currentUser = email;
+      localStorage.setItem('cs_token', idToken);
+      localStorage.setItem('cs_refresh', challenge.AuthenticationResult.RefreshToken);
+      localStorage.setItem('cs_user', email);
+      onLoginSuccess();
+    } else if (result.AuthenticationResult) {
+      idToken = result.AuthenticationResult.IdToken;
+      currentUser = email;
+      localStorage.setItem('cs_token', idToken);
+      localStorage.setItem('cs_refresh', result.AuthenticationResult.RefreshToken);
+      localStorage.setItem('cs_user', email);
+      onLoginSuccess();
+    }
+  } catch (err) {
+    btn.disabled = false; btn.textContent = 'Sign In';
+    if (err.code === 'UserNotConfirmedException') {
+      showError('Email not verified. Check your inbox.');
+      switchTab('confirm');
+    } else {
+      showError(err.message || 'Login failed.');
+    }
+  }
+}
+
+async function doRegister() {
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  const name = document.getElementById('authName').value.trim();
+  if (!email || !password) { showError('Please enter email and password.'); return; }
+  const btn = document.getElementById('authBtn');
+  btn.disabled = true; btn.textContent = 'Creating account...';
+  try {
+    const attrs = [{ Name: 'email', Value: email }];
+    if (name) attrs.push({ Name: 'name', Value: name });
+    await cognitoCall('SignUp', {
+      ClientId: CONFIG.COGNITO_CLIENT_ID,
+      Username: email,
+      Password: password,
+      UserAttributes: attrs,
+    });
+    showSuccess('Account created! Check your email for the verification code.');
+    btn.disabled = false;
+    switchTab('confirm');
+  } catch (err) {
+    btn.disabled = false; btn.textContent = 'Create Account';
+    showError(err.message || 'Registration failed.');
+  }
+}
+
+async function doConfirm() {
+  const email = document.getElementById('authEmail').value.trim();
+  const code = document.getElementById('authCode').value.trim();
+  if (!email || !code) { showError('Please enter email and verification code.'); return; }
+  const btn = document.getElementById('authBtn');
+  btn.disabled = true; btn.textContent = 'Verifying...';
+  try {
+    await cognitoCall('ConfirmSignUp', {
+      ClientId: CONFIG.COGNITO_CLIENT_ID,
+      Username: email,
+      ConfirmationCode: code,
+    });
+    showSuccess('Email verified! You can now sign in.');
+    btn.disabled = false;
+    switchTab('login');
+  } catch (err) {
+    btn.disabled = false; btn.textContent = 'Verify Email';
+    showError(err.message || 'Verification failed.');
+  }
+}
+
+function onLoginSuccess() {
+  document.getElementById('loginScreen').classList.add('hidden');
+  document.getElementById('appContent').classList.add('visible');
+  document.getElementById('userBadge').textContent = currentUser;
+  loadData();
+  setInterval(loadData, 30000);
+}
+
+function logout() {
+  idToken = null; currentUser = null;
+  localStorage.removeItem('cs_token');
+  localStorage.removeItem('cs_refresh');
+  localStorage.removeItem('cs_user');
+  document.getElementById('loginScreen').classList.remove('hidden');
+  document.getElementById('appContent').classList.remove('visible');
+  document.getElementById('authPassword').value = '';
+  switchTab('login');
+}
+
+function checkSession() {
+  const token = localStorage.getItem('cs_token');
+  const user = localStorage.getItem('cs_user');
+  const refresh = localStorage.getItem('cs_refresh');
+  if (!token || !user) return;
+  // Try to refresh the token
+  if (refresh) {
+    cognitoCall('InitiateAuth', {
+      AuthFlow: 'REFRESH_TOKEN_AUTH',
+      ClientId: CONFIG.COGNITO_CLIENT_ID,
+      AuthParameters: { REFRESH_TOKEN: refresh },
+    }).then(result => {
+      if (result.AuthenticationResult) {
+        idToken = result.AuthenticationResult.IdToken;
+        currentUser = user;
+        localStorage.setItem('cs_token', idToken);
+        onLoginSuccess();
+      }
+    }).catch(() => { localStorage.clear(); });
+  }
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !document.getElementById('loginScreen').classList.contains('hidden')) handleAuth();
+  if (e.key === 'Escape') closeDetail();
+});
+
+// ═══════════════════════════════════════════
+// AUTHENTICATED API CALLS
+// ═══════════════════════════════════════════
+function authFetch(url, options = {}) {
+  if (!options.headers) options.headers = {};
+  if (idToken) options.headers['Authorization'] = idToken;
+  return fetch(url, options);
+}
+
+// ═══════════════════════════════════════════
+// DASHBOARD (same as before, but using authFetch)
+// ═══════════════════════════════════════════
+let allAlerts=[],currentFilter='ALL',currentSeverityFilter=null;
+
+async function loadData(){
+  const btn=document.getElementById('refreshBtn');btn.classList.add('loading');btn.textContent='↻ Loading...';
+  try{
+    const[stats,alerts]=await Promise.all([authFetch(`${CONFIG.API_BASE}/stats`).then(r=>{if(r.status===401){logout();throw new Error('Session expired')}return r.json()}),authFetch(`${CONFIG.API_BASE}/alerts?limit=50`).then(r=>r.json())]);
+    renderSeverityCounts(stats);renderStats(stats,alerts);
+    const seen=new Set();
+    allAlerts=(alerts.alerts||[]).filter(a=>{if(seen.has(a.alert_id))return false;seen.add(a.alert_id);return true}).sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
+    renderAlerts();renderActivityFeed(stats);renderMitreCounts();updateTimestamp(stats.last_updated);
+  }catch(err){if(err.message!=='Session expired')showToast('Failed: '+err.message,true)}
+  finally{btn.classList.remove('loading');btn.textContent='↻ Refresh'}
+}
+
+function renderSeverityCounts(s){const d=s.alerts_by_severity||{};animateCount('countCritical',d.CRITICAL||0);animateCount('countHigh',d.HIGH||0);animateCount('countMedium',d.MEDIUM||0);animateCount('countLow',d.LOW||0)}
+function renderStats(s,a){animateCount('eventsToday',s.events_today||0);animateCount('totalAlerts',s.total_open_alerts||0);animateCount('containedCount',(a.alerts||[]).filter(x=>x.status==='CONTAINED').length)}
+function renderAlerts(){
+  const list=document.getElementById('alertsList');let f=allAlerts;
+  if(currentFilter!=='ALL')f=f.filter(a=>a.status===currentFilter);
+  if(currentSeverityFilter)f=f.filter(a=>a.severity===currentSeverityFilter);
+  document.getElementById('alertBadge').textContent=f.length;
+  document.querySelectorAll('.severity-card').forEach(c=>c.classList.remove('active'));
+  if(currentSeverityFilter)document.querySelector(`.severity-card.${currentSeverityFilter.toLowerCase()}`)?.classList.add('active');
+  if(!f.length){list.innerHTML='<div class="empty-state"><div class="icon">🛡️</div>No alerts match filters.</div>';return}
+  list.innerHTML=f.map(a=>`<div class="alert-item" onclick="showDetail('${a.alert_id}')"><div class="alert-top"><span class="severity-badge ${a.severity||''}">${a.severity||'?'}</span><span class="status-badge ${a.status||''}">${a.status||'?'}</span><span class="alert-rule">${a.rule_name||''}</span></div><div class="alert-title">${esc(a.title||a.rule_name||'Security Alert')}</div><div class="alert-desc">${esc(trunc(a.description||'',160))}</div><div class="alert-footer"><span class="alert-time">${fmtTime(a.created_at)}</span>${a.mitre_technique?`<span class="alert-mitre">${esc(a.mitre_technique)}</span>`:''}</div></div>`).join('')
+}
+function renderActivityFeed(s){const feed=document.getElementById('activityFeed'),r=s.recent_alerts||[];if(!r.length){feed.innerHTML='<div class="empty-state"><div class="icon">📋</div>No activity.</div>';return}feed.innerHTML=r.map(item=>{const sev=item.severity||'LOW',st=item.status||'OPEN',dot=st==='CONTAINED'?'CONTAINED':sev;const txt=st==='CONTAINED'?`<strong>Auto-contained:</strong> ${esc(item.title||item.rule_name||'Alert')}`:`<strong>${sev} Alert:</strong> ${esc(item.title||item.description||item.rule_name||'Event')}`;return`<div class="feed-item"><div class="feed-dot ${dot}"></div><div class="feed-content"><div class="feed-text">${txt}</div><div class="feed-time">${fmtTime(item.created_at)}</div></div></div>`}).join('')}
+function renderMitreCounts(){const c={brute:0,privesc:0,exfil:0,lateral:0};allAlerts.forEach(a=>{const r=a.rule_name||'';if(r.includes('BRUTE'))c.brute++;if(r.includes('PRIVILEGE')||r.includes('MULTI_STAGE'))c.privesc++;if(r.includes('EXFIL'))c.exfil++;if(r.includes('LATERAL'))c.lateral++});document.getElementById('mitre-brute').textContent=`Detections: ${c.brute}`;document.getElementById('mitre-privesc').textContent=`Detections: ${c.privesc}`;document.getElementById('mitre-exfil').textContent=`Detections: ${c.exfil}`;document.getElementById('mitre-lateral').textContent=`Detections: ${c.lateral}`}
+function setFilter(f,btn){currentFilter=f;document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');renderAlerts()}
+function filterBySeverity(s){currentSeverityFilter=currentSeverityFilter===s?null:s;renderAlerts()}
+function showDetail(alertId){const a=allAlerts.find(x=>x.alert_id===alertId);if(!a)return;document.getElementById('detailBody').innerHTML=`<div class="detail-section"><div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap"><span class="severity-badge ${a.severity||''}" style="font-size:12px;padding:5px 12px">${a.severity||'?'}</span><span class="status-badge ${a.status||''}" style="font-size:12px;padding:5px 12px">${a.status||'?'}</span></div><h2 style="font-size:18px;font-weight:600;margin-bottom:8px">${esc(a.title||a.rule_name||'Security Alert')}</h2><p style="font-size:13px;color:var(--text-secondary);line-height:1.6">${esc(a.description||'No description.')}</p></div><div class="detail-section"><div class="detail-section-title">Alert Info</div><div class="detail-field"><div class="detail-field-label">Alert ID</div><div class="detail-field-value mono">${a.alert_id||'—'}</div></div><div class="detail-field"><div class="detail-field-label">Rule</div><div class="detail-field-value mono">${a.rule_name||'—'}</div></div><div class="detail-field"><div class="detail-field-label">Time</div><div class="detail-field-value mono">${a.created_at||'—'}</div></div><div class="detail-field"><div class="detail-field-label">Source IP</div><div class="detail-field-value mono">${a.source_ip||'—'}</div></div><div class="detail-field"><div class="detail-field-label">User Identity</div><div class="detail-field-value mono">${a.user_identity||'—'}</div></div><div class="detail-field"><div class="detail-field-label">MITRE Technique</div><div class="detail-field-value mono">${a.mitre_technique||'—'}</div></div></div><div class="detail-section"><div class="detail-section-title">Recommended Actions</div><div class="detail-action-box">${(a.recommended_action||'Investigate.').split(',').map(x=>`<div class="detail-action-item">${esc(x.trim())}</div>`).join('')}</div></div>${a.report_location?`<div class="detail-section"><div class="detail-section-title">Incident Report</div><div class="detail-field"><div class="detail-field-value mono" style="font-size:11px;word-break:break-all">${esc(a.report_location)}</div></div></div>`:''}${a.event_ids?.length?`<div class="detail-section"><div class="detail-section-title">Related Events (${a.event_ids.length})</div><div style="display:flex;flex-wrap:wrap;gap:6px">${a.event_ids.slice(0,10).map(id=>`<span style="font-family:var(--font-mono);font-size:10px;background:var(--bg-card);border:1px solid var(--border);padding:4px 8px;border-radius:4px">${esc(String(id).substring(0,8))}…</span>`).join('')}</div></div>`:''}`;document.getElementById('detailOverlay').classList.add('visible')}
+function closeDetail(){document.getElementById('detailOverlay').classList.remove('visible')}
+function toggleAttackPanel(){const p=document.getElementById('attackPanel');p.classList.toggle('visible');if(p.classList.contains('visible'))loadScenarios()}
+async function loadScenarios(){const g=document.getElementById('scenarioGrid');try{const d=await authFetch(`${CONFIG.API_BASE}/scenarios`).then(r=>r.json());g.innerHTML=(d.scenarios||[]).map(s=>`<div class="scenario-card" id="sc-${s.id}" onclick="launchAttack('${s.id}','${esc(s.name)}')"><div class="scenario-name">${esc(s.name)}</div><div class="scenario-desc">${esc(s.description)}</div><div class="scenario-meta"><span class="scenario-severity ${s.severity}">${s.severity}</span><span class="scenario-attacks">${s.attacks} attack${s.attacks>1?'s':''}</span></div></div>`).join('')}catch{g.innerHTML='<div class="empty-state">Failed to load scenarios.</div>'}}
+async function launchAttack(id,name){const card=document.getElementById(`sc-${id}`),res=document.getElementById('attackResult');card.classList.add('running');card.innerHTML+='<div style="position:absolute;inset:0;background:rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;border-radius:10px;font-family:var(--font-mono);font-size:12px;color:var(--accent-red)">⚡ Executing...</div>';try{const r=await authFetch(`${CONFIG.API_BASE}/attack`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenario_id:id})}).then(r=>r.json());res.className='attack-result visible';res.innerHTML=`✓ "${name}" — ${r.result?.total_events_generated||'?'} events generated.`;showToast(`Attack: ${r.result?.total_events_generated||0} events`);setTimeout(loadData,3000)}catch(e){res.className='attack-result visible error';res.textContent='✕ '+e.message}setTimeout(loadScenarios,2000)}
+
+function animateCount(id,target){const el=document.getElementById(id),cur=parseInt(el.textContent)||0;if(cur===target){el.textContent=target;return}const st=performance.now();(function step(now){const p=Math.min((now-st)/600,1);el.textContent=Math.round(cur+(target-cur)*(1-Math.pow(1-p,3)));if(p<1)requestAnimationFrame(step)})(performance.now())}
+function fmtTime(iso){if(!iso)return'—';try{const d=(Date.now()-new Date(iso).getTime())/1e3;if(d<60)return'Just now';if(d<3600)return`${Math.floor(d/60)}m ago`;if(d<86400)return`${Math.floor(d/3600)}h ago`;return new Date(iso).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}catch{return iso}}
+function updateTimestamp(iso){if(iso)document.getElementById('lastUpdated').textContent=`Updated: ${new Date(iso).toLocaleTimeString()}`}
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+function trunc(s,n){return s.length>n?s.substring(0,n)+'...':s}
+function showToast(m,err){const t=document.getElementById('toast');t.textContent=m;t.className='toast'+(err?' error':'');t.style.display='block';setTimeout(()=>t.style.display='none',4000)}
+
+// Init
+checkSession();
+</script>
+</body>
+</html>

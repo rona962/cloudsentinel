@@ -1,0 +1,100 @@
+{
+  "Comment": "CloudSentinel Incident Response Workflow",
+  "StartAt": "Classify",
+  "States": {
+    "Classify": {
+      "Type": "Task",
+      "Resource": "${IRClassifyArn}",
+      "ResultPath": "$.classification",
+      "Next": "SeverityRouter",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "HandleError",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+    "SeverityRouter": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.classification.severity",
+          "StringEquals": "CRITICAL",
+          "Next": "EmergencyContain"
+        },
+        {
+          "Variable": "$.classification.severity",
+          "StringEquals": "HIGH",
+          "Next": "StandardContain"
+        }
+      ],
+      "Default": "LogOnly"
+    },
+    "EmergencyContain": {
+      "Type": "Task",
+      "Resource": "${IRContainArn}",
+      "Parameters": {
+        "alert.$": "$.detail",
+        "classification.$": "$.classification",
+        "mode": "emergency"
+      },
+      "ResultPath": "$.containment",
+      "Next": "Investigate"
+    },
+    "StandardContain": {
+      "Type": "Task",
+      "Resource": "${IRContainArn}",
+      "Parameters": {
+        "alert.$": "$.detail",
+        "classification.$": "$.classification",
+        "mode": "standard"
+      },
+      "ResultPath": "$.containment",
+      "Next": "Investigate"
+    },
+    "Investigate": {
+      "Type": "Task",
+      "Resource": "${IRInvestigateArn}",
+      "ResultPath": "$.investigation",
+      "Next": "Remediate"
+    },
+    "Remediate": {
+      "Type": "Task",
+      "Resource": "${IRRemediateArn}",
+      "ResultPath": "$.remediation",
+      "Next": "GenerateReport"
+    },
+    "GenerateReport": {
+      "Type": "Task",
+      "Resource": "${IRReportArn}",
+      "ResultPath": "$.report",
+      "Next": "IncidentResolved"
+    },
+    "LogOnly": {
+      "Type": "Task",
+      "Resource": "${IRReportArn}",
+      "Parameters": {
+        "alert.$": "$.detail",
+        "classification.$": "$.classification",
+        "mode": "log_only"
+      },
+      "ResultPath": "$.report",
+      "Next": "IncidentResolved"
+    },
+    "HandleError": {
+      "Type": "Task",
+      "Resource": "${IRReportArn}",
+      "Parameters": {
+        "alert.$": "$.detail",
+        "error.$": "$.error",
+        "mode": "error"
+      },
+      "ResultPath": "$.report",
+      "Next": "IncidentResolved"
+    },
+    "IncidentResolved": {
+      "Type": "Succeed"
+    }
+  }
+}
